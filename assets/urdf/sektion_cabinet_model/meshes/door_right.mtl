@@ -1,13 +1,3 @@
-# Blender MTL File: 'None'
-# Material Count: 1
-
-newmtl Material.002
-Ns 96.078431
-Ka 1.000000 1.000000 1.000000
-Kd 0.840000 0.80000 0.640000
-Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
-Ni 1.000000
-d 1.000000
-illum 2
-# map_Kd WoodFine0035_1_S.jpg
+version https://git-lfs.github.com/spec/v1
+oid sha256:4714185d7cb2ddbdcca6cca15648847b3fe7d523c8331aa0823fc62ca7694dcb
+size 261

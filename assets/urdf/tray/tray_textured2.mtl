@@ -1,13 +1,3 @@
-# Blender MTL File: 'tray_textured2.blend'
-# Material Count: 1
-
-newmtl None
-Ns 0.000000
-Ka 0.000000 0.000000 0.000000
-Kd 0.800000 0.800000 0.800000
-Ks 0.800000 0.800000 0.800000
-Ke 0.000000 0.000000 0.000000
-Ni 1.000000
-d 1.000000
-illum 2
-map_Kd tray.jpg
+version https://git-lfs.github.com/spec/v1
+oid sha256:37dfe93d14b1f1c24276e23f75009f0390a1b82bb8528e97b5a96cbabfaf0d32
+size 268
