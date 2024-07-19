@@ -460,6 +460,9 @@ class VecTask(Env):
             # check for window closed
             if self.gym.query_viewer_has_closed(self.viewer):
                 sys.exit()
+            
+            # This will crash tasks other than ImitationPolicyA1.
+            self.viewer_update()
 
             # check for keyboard events
             for evt in self.gym.query_viewer_action_events(self.viewer):
@@ -469,6 +472,9 @@ class VecTask(Env):
                     self.enable_viewer_sync = not self.enable_viewer_sync
                 elif evt.action == "record_frames" and evt.value > 0:
                     self.record_frames = not self.record_frames
+
+                # This will crash tasks other than ImitationPolicyA1.
+                self.keyboard(evt)
 
             # fetch results
             if self.device != 'cpu':

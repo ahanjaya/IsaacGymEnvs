@@ -84,6 +84,42 @@ def set_np_formatting():
                         suppress=False, threshold=10000, formatter=None)
 
 
+def add_square_plane(gym, sim, size, transform, static_friction, dynamic_friction, restitution):
+    tri_params = gymapi.TriangleMeshParams()
+    tri_params.dynamic_friction = static_friction
+    tri_params.static_friction = dynamic_friction
+    tri_params.restitution = restitution
+    tri_params.transform = transform
+    tri_params.nb_triangles = 2
+    tri_params.nb_vertices = 4
+    size = size / 2.0
+    vertices = np.array([
+        size, size, 0.0,
+        size, -size, 0.0,
+        -size, -size, 0.0,
+        -size, size, 0.0
+    ], dtype=np.float32)
+    indices = np.array([
+        3, 1, 0,
+        3, 2, 1,
+    ], dtype=np.uint32)
+    gym.add_triangle_mesh(sim, vertices, indices, tri_params)
+
+def sample_frictions(static_bounds, rest_bounds):
+    sf = np.random.random() * \
+        (static_bounds[1] - static_bounds[0]) \
+        + static_bounds[0]
+    # Dynamic friction is upper bounded by static friction.
+    df = np.random.random() * \
+        (sf - static_bounds[0]) \
+        + static_bounds[0]
+    rs = np.random.random() * \
+        (rest_bounds[1] - rest_bounds[0]) \
+        + rest_bounds[0]
+
+    return sf, df, rs
+
+
 def set_seed(seed, torch_deterministic=False, rank=0):
     """ set seed across modules """
     if seed == -1 and torch_deterministic:

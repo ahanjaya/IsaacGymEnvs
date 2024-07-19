@@ -666,4 +666,12 @@ def calc_heading_quat_inv(q):
     return heading_q
 
 
+@torch.jit.script
+def normalize_angle_tensor(angles: torch.Tensor):
+    beta = 1e-4  # Prevent floating point error.
+    angles -= beta
+    angles = torch.where(angles > np.pi, angles % np.pi - np.pi, angles)
+    angles = torch.where(angles < -np.pi, angles + np.pi * 2, angles)
+    angles += beta
+    return angles
 # EOF
