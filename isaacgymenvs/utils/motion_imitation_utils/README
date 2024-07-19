@@ -1,0 +1,4 @@
+The code in this package comes from the original `motion_imitation` repository from Google Research. The code
+here is used to deal with the motion data, and we are reusing it so we can keep the same format.
+The code here is dependent on some PyBullet utilities but does not require a PyBullet instance. In the future
+we could rewrite the transformations to be indenpendent from PyBullet to fully decouple it.

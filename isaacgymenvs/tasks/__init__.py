@@ -46,6 +46,7 @@ from .shadow_hand import ShadowHand
 from .allegro_hand import AllegroHand
 from .dextreme.allegro_hand_dextreme import AllegroHandDextremeManualDR, AllegroHandDextremeADR
 from .trifinger import Trifinger
+from .imitation_motion_a1 import ImitationMotionA1
 from .template_unitree_a1 import TemplateUnitreeA1
 
 from .allegro_kuka.allegro_kuka_reorientation import AllegroKukaReorientation
@@ -112,5 +113,6 @@ isaacgym_task_map = {
     "Quadcopter": Quadcopter,
     "ShadowHand": ShadowHand,
     "Trifinger": Trifinger,
+    "ImitationMotionA1": ImitationMotionA1,
     "TemplateUnitreeA1": TemplateUnitreeA1,
 }
