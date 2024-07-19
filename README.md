@@ -14,6 +14,12 @@ Download the Isaac Gym Preview 4 release from the [website](https://developer.nv
 follow the installation instructions in the documentation. We highly recommend using a conda environment 
 to simplify set up.
 
+Follow this quick command to install isaacgym:
+```bash
+cd base-isaacgym-v4
+bash install.sh
+```
+
 Ensure that Isaac Gym works on your system by running one of the examples from the `python/examples` 
 directory, like `joint_monkey.py`. Follow troubleshooting steps described in the Isaac Gym Preview 4
 install instructions if you have any trouble running the samples.
