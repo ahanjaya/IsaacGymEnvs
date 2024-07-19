@@ -284,7 +284,7 @@ class VecTask(Env):
             self.gym.subscribe_viewer_keyboard_event(
                 self.viewer, gymapi.KEY_V, "toggle_viewer_sync")
             self.gym.subscribe_viewer_keyboard_event(
-                self.viewer, gymapi.KEY_R, "record_frames")
+                self.viewer, gymapi.KEY_M, "record_frames")
 
             # set the camera position based on up axis
             sim_params = self.gym.get_sim_params(self.sim)
