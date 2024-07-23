@@ -37,9 +37,6 @@ from isaacgym import gymapi
 from isaacgymenvs.utils.torch_jit_utils import to_torch, tensor_clamp
 from isaacgymenvs.tasks.base.vec_task import VecTask
 
-# TODO:
-# 1. set viewer camera to look at env 0 directly
-# 2. learn isaaclab reach franka
 
 class FrankaReach(VecTask):
     def __init__(
@@ -126,6 +123,9 @@ class FrankaReach(VecTask):
 
         # Refresh tensors
         self._refresh()
+
+        if not self.headless:
+            self._init_debug()
 
     def create_sim(self):
         self.sim_params.up_axis = gymapi.UP_AXIS_Z
@@ -313,64 +313,54 @@ class FrankaReach(VecTask):
         # Setup data
         self.init_data()
 
+    def _init_debug(self):
+        # Focus viewer's camera on the first environment.
+        self.flag_camera_look_at = self.cfg["render"].get(
+            "enableCameraLookAtEnv", False
+        )
+        self.i_look_at_env = self.cfg["render"].get("cameraLookAtEnvId", 0)
+        self.debug_cam_pos = gymapi.Vec3(*self.cfg["render"]["cameraPosition"])
+        self.debug_cam_target = gymapi.Vec3(*self.cfg["render"]["cameraTarget"])
+        self.gym.viewer_camera_look_at(
+            self.viewer,
+            self.envs[self.i_look_at_env],
+            self.debug_cam_pos,
+            self.debug_cam_target,
+        )
+        self.gym.subscribe_viewer_keyboard_event(
+            self.viewer, gymapi.KEY_T, "camera_look_at"
+        )
+        self.gym.subscribe_viewer_keyboard_event(
+            self.viewer, gymapi.KEY_Y, "env_prev"
+        )
+        self.gym.subscribe_viewer_keyboard_event(
+            self.viewer, gymapi.KEY_U, "env_next"
+        )
+        self.gym.subscribe_viewer_keyboard_event(
+            self.viewer, gymapi.KEY_R, "reset_envs"
+        )
+
     def keyboard(self, event):
-        # TODO: Add keyboard controls for viewer
-        pass
+        if event.action == "camera_look_at" and event.value > 0:
+            self.flag_camera_look_at = not self.flag_camera_look_at
+        elif event.action == "env_prev" and event.value > 0:
+            self.i_look_at_env = max(0, self.i_look_at_env - 1)
+        elif event.action == "env_next" and event.value > 0:
+            self.i_look_at_env = min(self.i_look_at_env + 1, self.num_envs - 1)
+        elif event.action == "reset_envs" and event.value > 0:
+            self.reset_buf[:] = 1
 
     def viewer_update(self):
-        # TODO: Add viewer update code (camera follow, depth cam)
-        pass
+        if self.flag_camera_look_at:
+            self.update_debug_camera()
 
     def update_debug_camera(self):
-        actor_pos = self.root_sim_positions.cpu().numpy()[self.i_follow_env]
-
-        spacing = self.cfg["env"]["envSpacing"]
-        row = int(np.sqrt(self.num_envs))
-        if row > 1:
-            x = self.i_follow_env % row
-            y = (self.i_follow_env - x) / row
-        else:
-            x = self.i_follow_env % 2
-            y = (self.i_follow_env - x) / 2
-        env_offset = [x * 2 * spacing, y * spacing, 0.0]
-
-        # Smooth the camera movement with a moving average.
-        k_smooth = 0.9
-        new_cam_pos = gymapi.Vec3(
-            actor_pos[0] + self.debug_cam_offset[0] + env_offset[0],
-            actor_pos[1] + self.debug_cam_offset[1] + env_offset[1],
-            actor_pos[2] + self.debug_cam_offset[2] + env_offset[2],
-        )
-        new_cam_target = gymapi.Vec3(
-            actor_pos[0] + env_offset[0],
-            actor_pos[1] + env_offset[1],
-            actor_pos[2] + env_offset[2],
-        )
-
-        self.debug_cam_pos.x = (
-            k_smooth * self.debug_cam_pos.x + (1 - k_smooth) * new_cam_pos.x
-        )
-        self.debug_cam_pos.y = (
-            k_smooth * self.debug_cam_pos.y + (1 - k_smooth) * new_cam_pos.y
-        )
-        self.debug_cam_pos.z = (
-            k_smooth * self.debug_cam_pos.z + (1 - k_smooth) * new_cam_pos.z
-        )
-
-        self.debug_cam_target.x = (
-            k_smooth * self.debug_cam_target.x + (1 - k_smooth) * new_cam_target.x
-        )
-        self.debug_cam_target.y = (
-            k_smooth * self.debug_cam_target.y + (1 - k_smooth) * new_cam_target.y
-        )
-        self.debug_cam_target.z = (
-            k_smooth * self.debug_cam_target.z + (1 - k_smooth) * new_cam_target.z
-        )
-
         self.gym.viewer_camera_look_at(
-            self.viewer, None, self.debug_cam_pos, self.debug_cam_target
+            self.viewer,
+            self.envs[self.i_look_at_env],
+            self.debug_cam_pos,
+            self.debug_cam_target,
         )
-
 
     def init_data(self):
         # Setup sim handles

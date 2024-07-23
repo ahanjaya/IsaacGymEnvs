@@ -27,8 +27,6 @@ env:
     assetRoot: "../../assets"
     assetFileNameFranka: "urdf/franka_description/robots/franka_panda_gripper.urdf"
 
-  # set to True if you use camera sensors in the environment
-  enableCameraSensors: False
 
 sim:
   dt: 0.01667 # 1/60
@@ -53,3 +51,9 @@ sim:
 
 task:
   randomize: False
+
+render:
+  enableCameraLookAtEnv: True
+  cameraLookAtEnvId: 0
+  cameraPosition: [1.0, 1.0, 2.0]
+  cameraTarget: [0.0, 0.0, 1.0]
