@@ -523,6 +523,7 @@ class FrankaReach(VecTask):
                 # Franka
                 "dof_pos": self.dof_pos[:, :],
                 "dof_gripper": self.dof_pos[:, -2:],
+                "dof_vel": self.dof_vel[:, :],
                 # End effector
                 "eef_pos": self.rigid_body_pos[:, self.handles["grip_site"]],
                 "eef_rot": self.rigid_body_rot[:, self.handles["grip_site"]],
@@ -587,14 +588,30 @@ class FrankaReach(VecTask):
                     geom, self.gym, self.viewer, self.envs[i], sphere_pose
                 )
 
-    def compute_reward(self, actions):
+    def compute_reward(self):
         self.rew_buf[:], self.reset_buf[:] = compute_franka_reward(
-            self.reset_buf, self.progress_buf, self.max_episode_length
+            self.reset_buf,
+            self.progress_buf,
+            self.max_episode_length,
+            self.states["eef_pos"],
+            self.states["target_pos"],
         )
 
     def compute_observations(self):
         self._refresh()
-        self.obs_buf = torch.zeros_like(self.obs_buf)
+
+        dof_pos_scaled = (
+            2.0
+            * (self.states["dof_pos"] - self.franka_dof_lower_limits)
+            / (self.franka_dof_upper_limits - self.franka_dof_lower_limits)
+            - 1.0
+        )
+        dof_vel_scaled = self.states["dof_vel"] * self._dof_vel_scale
+
+        self.obs_buf[:, 0] = self.progress_buf / self.max_episode_length
+        self.obs_buf[:, 1:8] = dof_pos_scaled[:, :7]
+        self.obs_buf[:, 8:15] = dof_vel_scaled[:, :7]
+        self.obs_buf[:, 15:18] = self.states["target_pos"]
 
         return self.obs_buf
 
@@ -679,7 +696,9 @@ class FrankaReach(VecTask):
 
         u_arm = self.actions
         u_gripper = torch.ones(
-            self.num_envs, dtype=torch.float32, device=self.device,
+            self.num_envs,
+            dtype=torch.float32,
+            device=self.device,
         )
 
         # Control arm (scale value first)
@@ -728,7 +747,7 @@ class FrankaReach(VecTask):
             self.reset_idx(env_ids)
 
         self.compute_observations()
-        self.compute_reward(self.actions)
+        self.compute_reward()
 
 
 #####################################################################
@@ -741,11 +760,19 @@ def compute_franka_reward(
     reset_buf: torch.Tensor,
     progress_buf: torch.Tensor,
     max_episode_length: float,
+    end_effector_pos: torch.Tensor,
+    target_pos: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     # Compose rewards
-    rewards = torch.zeros_like(progress_buf)
+    l2_distance = torch.norm(end_effector_pos - target_pos, dim=-1)
+    rewards = -l2_distance
 
     # Compute resets
+    reset_buf = torch.where(
+        l2_distance <= 0.01,
+        torch.ones_like(reset_buf),
+        reset_buf
+    )
     reset_buf = torch.where(
         progress_buf >= max_episode_length - 1,
         torch.ones_like(reset_buf),
