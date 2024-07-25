@@ -34,6 +34,7 @@ import torch
 from isaacgym import gymapi, gymtorch, gymutil
 
 from isaacgymenvs.tasks.base.vec_task import VecTask
+from isaacgymenvs.utils import isaacgym_utils
 from isaacgymenvs.utils.torch_jit_utils import tensor_clamp, to_torch
 
 
@@ -408,8 +409,6 @@ class FrankaReach(VecTask):
                 self.sim, "franka"
             )
 
-        # self._refresh()
-
         self.root_state = gymtorch.wrap_tensor(root_state_tensor)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.rigid_body_state = gymtorch.wrap_tensor(rigid_body_state_tensor)
@@ -710,6 +709,16 @@ class FrankaReach(VecTask):
                 * u_arm
                 * self._action_scale
             )
+        elif self.control_type == "cartesian":
+            goal_position = self.states["eef_pos"] + u_arm / 100.0
+            delta_dof_pos = isaacgym_utils.ik(
+                self.jacobian_eef,
+                self.states["eef_pos"],
+                self.states["eef_rot"],
+                goal_position,
+                None,
+            )
+            targets_arm = self.franka_dof_targets[:, :7] + delta_dof_pos
 
         # Control gripper, last actions from the network
         # is a boolean to open/close gripper
