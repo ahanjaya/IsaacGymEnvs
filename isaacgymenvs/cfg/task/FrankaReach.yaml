@@ -12,7 +12,8 @@ env:
   clipObservations: 5.0
   clipActions: 1.0
 
-  startPositionNoise: 0.25
+  startPositionNoise: 0.3
+  startRotationNoise: 0.8
   frankaDofNoise: 0.25
 
   actionScale: 2.5
@@ -23,6 +24,11 @@ env:
   asset:
     assetRoot: "../../assets"
     assetFileNameFranka: "urdf/franka_description/robots/franka_panda_gripper.urdf"
+
+    tableThickness: 0.05
+    tableStandHeight: 0.1
+    cubeSize: 0.050
+    targetRadius: 0.025
 
 
 sim:

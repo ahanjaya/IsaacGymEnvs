@@ -35,7 +35,7 @@ from isaacgym import gymapi, gymtorch, gymutil
 
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from isaacgymenvs.utils import isaacgym_utils
-from isaacgymenvs.utils.torch_jit_utils import tensor_clamp, to_torch
+from isaacgymenvs.utils.torch_jit_utils import *
 
 
 class FrankaReach(VecTask):
@@ -54,6 +54,7 @@ class FrankaReach(VecTask):
 
         self.action_scale = self.cfg["env"]["actionScale"]
         self.start_position_noise = self.cfg["env"]["startPositionNoise"]
+        self.start_rotation_noise = self.cfg["env"]["startRotationNoise"]
         self.franka_dof_noise = self.cfg["env"]["frankaDofNoise"]
 
         # Controller type
@@ -123,19 +124,13 @@ class FrankaReach(VecTask):
         plane_params.normal = gymapi.Vec3(0.0, 0.0, 1.0)
         self.gym.add_ground(self.sim, plane_params)
 
-    def _create_envs(self, num_envs, spacing, num_per_row):
-        lower = gymapi.Vec3(-spacing, -spacing, 0.0)
-        upper = gymapi.Vec3(spacing, spacing, spacing)
-
+    def _create_assets(self):
         asset_root = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             self.cfg["env"]["asset"]["assetRoot"],
         )
         franka_asset_file = self.cfg["env"]["asset"]["assetFileNameFranka"]
 
-        ##########################################################
-        # Create all assets
-        ##########################################################
         # franka asset
         asset_options = gymapi.AssetOptions()
         asset_options.flip_visual_attachments = True
@@ -150,42 +145,45 @@ class FrankaReach(VecTask):
         )
 
         # table asset
-        table_pos = [0.0, 0.0, 1.0]
-        table_thickness = 0.05
-        table_opts = gymapi.AssetOptions()
-        table_opts.fix_base_link = True
+        self._table_thickness = self.cfg["env"]["asset"]["tableThickness"]
+        asset_options = gymapi.AssetOptions()
+        asset_options.fix_base_link = True
         table_asset = self.gym.create_box(
-            self.sim, *[1.2, 1.2, table_thickness], table_opts
+            self.sim, *[1.2, 1.2, self._table_thickness], asset_options
         )
 
         # table stand asset
-        table_stand_height = 0.1
-        table_stand_pos = [
-            -0.5,
-            0.0,
-            1.0 + table_thickness / 2 + table_stand_height / 2,
-        ]
-        table_stand_opts = gymapi.AssetOptions()
-        table_stand_opts.fix_base_link = True
+        self._table_stand_height = self.cfg["env"]["asset"]["tableStandHeight"]
+        asset_options = gymapi.AssetOptions()
+        asset_options.fix_base_link = True
         table_stand_asset = self.gym.create_box(
-            self.sim, *[0.2, 0.2, table_stand_height], table_opts
+            self.sim, *[0.2, 0.2, self._table_stand_height], asset_options
+        )
+
+        # cube asset
+        asset_options = gymapi.AssetOptions()
+        self._cube_size = self.cfg["env"]["asset"]["cubeSize"]
+        cube_asset = self.gym.create_box(
+            self.sim, *([self._cube_size] * 3), asset_options
         )
 
         # target asset
         asset_options = gymapi.AssetOptions()
         asset_options.fix_base_link = True
-        asset_options.collapse_fixed_joints = False
-        asset_options.disable_gravity = True
-        asset_options.thickness = 0.001
-        asset_options.use_mesh_materials = True
-        target_radius = 0.025
+        self._target_radius = self.cfg["env"]["asset"]["targetRadius"]
         target_asset = self.gym.create_sphere(
-            self.sim, target_radius, asset_options
+            self.sim, self._target_radius, asset_options
         )
 
-        ##########################################################
-        # Set up franka dof properties
-        ##########################################################
+        return {
+            "franka": franka_asset,
+            "table": table_asset,
+            "table_stand": table_stand_asset,
+            "cube": cube_asset,
+            "target": target_asset,
+        }
+
+    def _set_franka_dof_props(self, franka_asset):
         self.rigid_body_dict_franka = self.gym.get_asset_rigid_body_dict(
             franka_asset
         )
@@ -234,52 +232,109 @@ class FrankaReach(VecTask):
         franka_dof_props["effort"][7] = 200
         franka_dof_props["effort"][8] = 200
 
-        ##########################################################
-        # Define start poses
-        ##########################################################
+        return franka_dof_props
+
+    def _init_start_poses(self):
         # start pose for franka
         franka_start_pose = gymapi.Transform()
         franka_start_pose.p = gymapi.Vec3(
-            -0.45, 0.0, 1.0 + table_thickness / 2 + table_stand_height
+            -0.45,
+            0.0,
+            1.0 + self._table_thickness / 2 + self._table_stand_height,
         )
         franka_start_pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
 
         # start pose for table
         table_start_pose = gymapi.Transform()
+        table_pos = [0.0, 0.0, 1.0]
         table_start_pose.p = gymapi.Vec3(*table_pos)
         table_start_pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
         self._table_surface_pos = np.array(table_pos) + np.array(
-            [0, 0, table_thickness / 2]
+            [0, 0, self._table_thickness / 2]
         )
 
         # start pose for table stand
         table_stand_start_pose = gymapi.Transform()
+        table_stand_pos = [
+            -0.5,
+            0.0,
+            1.0 + self._table_thickness / 2 + self._table_stand_height / 2,
+        ]
         table_stand_start_pose.p = gymapi.Vec3(*table_stand_pos)
         table_stand_start_pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
+
+        # start pose for cube
+        cube_start_pose = gymapi.Transform()
+        self._cube_start_pos = self._table_surface_pos + np.array(
+            [0.0, 0.0, self._cube_size / 2]
+        )
+        cube_start_pose.p = gymapi.Vec3(*self._cube_start_pos)
+        cube_start_pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
 
         # start pose for target
         target_start_pose = gymapi.Transform()
         self._target_start_pos = self._table_surface_pos + np.array(
-            [0.0, 0.0, target_radius]
+            [0.0, 0.0, self._target_radius]
         )
         target_start_pose.p = gymapi.Vec3(*self._target_start_pos)
         target_start_pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
+
+        return {
+            "franka": franka_start_pose,
+            "table": table_start_pose,
+            "table_stand": table_stand_start_pose,
+            "cube": cube_start_pose,
+            "target": target_start_pose,
+        }
+
+    def _create_envs(self, num_envs, spacing, num_per_row):
+        lower = gymapi.Vec3(-spacing, -spacing, 0.0)
+        upper = gymapi.Vec3(spacing, spacing, spacing)
+
+        ##########################################################
+        # Create all assets
+        ##########################################################
+        assets_dict = self._create_assets()
+        franka_asset = assets_dict["franka"]
+        table_asset = assets_dict["table"]
+        table_stand_asset = assets_dict["table_stand"]
+        cube_asset = assets_dict["cube"]
+        target_asset = assets_dict["target"]
+
+        self._total_assets = len(assets_dict)
+
+        ##########################################################
+        # Set up franka dof properties
+        ##########################################################
+        franka_dof_props = self._set_franka_dof_props(franka_asset)
+
+        ##########################################################
+        # Define start poses
+        ##########################################################
+        start_poses_dict = self._init_start_poses()
+        franka_start_pose = start_poses_dict["franka"]
+        table_start_pose = start_poses_dict["table"]
+        table_stand_start_pose = start_poses_dict["table_stand"]
+        cube_start_pose = start_poses_dict["cube"]
+        target_start_pose = start_poses_dict["target"]
 
         # compute aggregate size
         num_franka_bodies = self.gym.get_asset_rigid_body_count(franka_asset)
         num_franka_shapes = self.gym.get_asset_rigid_shape_count(franka_asset)
         max_agg_bodies = (
-            num_franka_bodies + 3
-        )  # 1 for table, 1 table stand, 1 target
+            num_franka_bodies + 4
+        )  # 1 for table, 1 table stand, 1 cube, 1 target
         max_agg_shapes = (
-            num_franka_shapes + 3
-        )  # 1 for table, 1 table stand, 1 target
+            num_franka_shapes + 4
+        )  # 1 for table, 1 table stand, 1 cube, 1 target
 
         self.envs = []
         self.frankas = []
+        self.cubes = []
         self.targets = []
 
         indexes_sim_franka = []
+        indexes_sim_cube = []
         indexes_sim_target = []
 
         ##########################################################
@@ -322,9 +377,26 @@ class FrankaReach(VecTask):
                 0,
             )
 
+            # Create cube
+            cube_actor = self.gym.create_actor(
+                env_ptr, cube_asset, cube_start_pose, "cube", i, 2, 0
+            )
+            self.gym.set_rigid_body_color(
+                env_ptr,
+                cube_actor,
+                0,
+                gymapi.MESH_VISUAL,
+                gymapi.Vec3(0.0, 0.4, 0.1),
+            )
+            indexes_sim_cube.append(
+                self.gym.get_actor_index(
+                    env_ptr, cube_actor, gymapi.DOMAIN_SIM
+                )
+            )
+
             # Create target
             target_actor = self.gym.create_actor(
-                env_ptr, target_asset, target_start_pose, "target", i, 2, 0
+                env_ptr, target_asset, target_start_pose, "target", i, 3, 0
             )
             self.gym.set_rigid_body_color(
                 env_ptr,
@@ -344,10 +416,14 @@ class FrankaReach(VecTask):
             # Store the created env pointers
             self.envs.append(env_ptr)
             self.frankas.append(franka_actor)
+            self.cubes.append(cube_actor)
             self.targets.append(target_actor)
 
         self.indexes_sim_franka = torch.tensor(
             indexes_sim_franka, dtype=torch.int32, device=self.device
+        )
+        self.indexes_sim_cube = torch.tensor(
+            indexes_sim_cube, dtype=torch.int32, device=self.device
         )
         self.indexes_sim_target = torch.tensor(
             indexes_sim_target, dtype=torch.int32, device=self.device
@@ -360,7 +436,6 @@ class FrankaReach(VecTask):
         # Setup sim handles
         env_ptr = self.envs[0]
         franka_handle = self.frankas[0]
-        target_handle = self.targets[0]
 
         self.handles = {
             # Franka
@@ -376,10 +451,10 @@ class FrankaReach(VecTask):
             "grip_site": self.gym.find_actor_rigid_body_handle(
                 env_ptr, franka_handle, "panda_grip_site"
             ),
+            # Cube
+            "cube": self.gym.find_actor_handle(env_ptr, "cube"),
             # Target
-            "target": self.gym.find_actor_rigid_body_handle(
-                env_ptr, target_handle, "target"
-            ),
+            "target": self.gym.find_actor_handle(env_ptr, "target"),
         }
 
         # Franka defaults
@@ -448,9 +523,10 @@ class FrankaReach(VecTask):
             )["panda_hand_joint"]
             self.jacobian_eef = self.jacobian[:, hand_joint_index, :, :7]
 
-        # TODO: Reset P&P cube maybe need this
         self._global_indices = torch.arange(
-            self.num_envs * 4, dtype=torch.int32, device=self.device
+            self.num_envs * self._total_assets,
+            dtype=torch.int32,
+            device=self.device,
         ).view(self.num_envs, -1)
 
     def _init_debug(self):
@@ -538,6 +614,9 @@ class FrankaReach(VecTask):
                 "eef_rf_pos": self.rigid_body_pos[
                     :, self.handles["rightfinger_tip"]
                 ],
+                # Cube
+                "cube_pos": self.root_pos[:, self.handles["cube"]],
+                "cube_rot": self.root_rot[:, self.handles["cube"]],
                 # Target
                 "target_pos": self.root_pos[:, self.handles["target"]],
                 "target_rot": self.root_rot[:, self.handles["target"]],
@@ -570,12 +649,19 @@ class FrankaReach(VecTask):
                 None,
                 color=(0, 1, 0),
             ),
-            "target_pos": gymutil.WireframeSphereGeometry(
+            "cube_pos": gymutil.WireframeSphereGeometry(
                 0.04,
                 8,
                 8,
                 None,
                 color=(0, 0, 1),
+            ),
+            "target_pos": gymutil.WireframeSphereGeometry(
+                0.02,
+                8,
+                8,
+                None,
+                color=(1, 1, 0),
             ),
         }
 
@@ -653,34 +739,66 @@ class FrankaReach(VecTask):
         )
 
         ##################################################################
-        # Reset target
+        # Reset cube
         ##################################################################
-        pos = torch.zeros(num_resets, 3, device=self.device)
+        sample_cube_state = torch.zeros(num_resets, 13, device=self.device)
+        # initialize rotation, quat w = 1.0
+        sample_cube_state[:, 6] = 1.0
         pos_noise = torch.rand((num_resets, 3), device=self.device)
 
         # Sampling xy is "centered" around middle of table
-        centered_target_xy_state = torch.tensor(
+        centered_table_xy_state = torch.tensor(
             self._table_surface_pos[:2],
             device=self.device,
             dtype=torch.float32,
         )
-        pos[:, :2] = centered_target_xy_state.unsqueeze(
+        sample_cube_state[:, :2] = centered_table_xy_state.unsqueeze(
+            0
+        ) + self.start_position_noise * 2.0 * (pos_noise[:, :2] - 0.5)
+
+        # set z value, which is fixed height
+        sample_cube_state[:, 2] = self._cube_start_pos[2]
+        self.root_pos[env_ids, self.handles["cube"], :] = sample_cube_state[
+            :, :3
+        ]
+
+        aa_rot = torch.zeros(num_resets, 3, device=self.device)
+        aa_rot[:, 2] = (
+            2.0
+            * self.start_rotation_noise
+            * (torch.rand(num_resets, device=self.device) - 0.5)
+        )
+        self.root_rot[env_ids, self.handles["cube"], :] = quat_mul(
+            axisangle2quat(aa_rot), sample_cube_state[:, 3:7]
+        )
+
+        ##################################################################
+        # Reset target
+        ##################################################################
+        sample_target_pos = torch.zeros(num_resets, 3, device=self.device)
+        pos_noise = torch.rand((num_resets, 3), device=self.device)
+
+        # Sampling xy is "centered" around middle of table
+        sample_target_pos[:, :2] = centered_table_xy_state.unsqueeze(
             0
         ) + self.start_position_noise * 2.0 * (pos_noise[:, :2] - 0.5)
 
         # Set z value, minimum is the start_position_noise
-        pos[:, 2] = (
+        sample_target_pos[:, 2] = (
             self._target_start_pos[2]
             + self.start_position_noise * 2.0 * pos_noise[:, 2]
         )
-        self.root_pos[env_ids, self.handles["target"], :] = pos[:]
+        self.root_pos[env_ids, self.handles["target"], :] = sample_target_pos[
+            :, :3
+        ]
 
-        indexes = self.indexes_sim_target[env_ids]
+        # Update root state for cube and target
+        multi_env_ids_int32 = self._global_indices[env_ids, -2:].flatten()
         self.gym.set_actor_root_state_tensor_indexed(
             self.sim,
             gymtorch.unwrap_tensor(self.root_state),
-            gymtorch.unwrap_tensor(indexes),
-            len(env_ids),
+            gymtorch.unwrap_tensor(multi_env_ids_int32),
+            len(multi_env_ids_int32),
         )
 
         self.progress_buf[env_ids] = 0
@@ -778,9 +896,7 @@ def compute_franka_reward(
 
     # Compute resets
     reset_buf = torch.where(
-        l2_distance <= 0.01,
-        torch.ones_like(reset_buf),
-        reset_buf
+        l2_distance <= 0.01, torch.ones_like(reset_buf), reset_buf
     )
     reset_buf = torch.where(
         progress_buf >= max_episode_length - 1,
