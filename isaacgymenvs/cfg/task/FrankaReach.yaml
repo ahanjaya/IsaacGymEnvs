@@ -7,7 +7,7 @@ physics_engine: ${..physics_engine}
 env:
   numEnvs: ${resolve_default:4096,${...num_envs}}
   envSpacing: 1.5
-  episodeLength: 100
+  episodeLength: 200
 
   clipObservations: 5.0
   clipActions: 1.0
@@ -30,6 +30,14 @@ env:
     cubeSize: 0.050
     targetRadius: 0.025
 
+  rewards:
+    stdDist: 0.1
+
+    weightDist: -0.2
+    weightDistTanH: 0.1
+    weightOri: -0.1
+    weightActionRate: -0.0001
+    weightJointVel: -0.0001
 
 sim:
   dt: 0.01667 # 1/60

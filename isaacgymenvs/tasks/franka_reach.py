@@ -65,7 +65,7 @@ class FrankaReach(VecTask):
         }, "Invalid control type specified. Must be one of: {cartesian, joint}"
 
         # observation and action space
-        self.cfg["env"]["numObservations"] = 18
+        self.cfg["env"]["numObservations"] = 29
 
         if self.control_type == "joint":
             # actions include: joint (7) + bool gripper (1)
@@ -73,8 +73,25 @@ class FrankaReach(VecTask):
         elif self.control_type == "cartesian":
             self.cfg["env"]["numActions"] = 3
 
+        self.actions = torch.zeros(
+            (self.cfg["env"]["numEnvs"], self.cfg["env"]["numActions"]),
+            dtype=torch.float32,
+            device=sim_device,
+        )
+        self.prev_actions = torch.zeros_like(self.actions)
+
         self._action_scale = self.cfg["env"]["actionScale"]
         self._dof_vel_scale = self.cfg["env"]["dofVelocityScale"]
+
+        # Rewards
+        self._std_dist = self.cfg["env"]["rewards"]["stdDist"]
+        self._weight_dist = self.cfg["env"]["rewards"]["weightDist"]
+        self._weight_dist_tanh = self.cfg["env"]["rewards"]["weightDistTanH"]
+        self._weight_ori = self.cfg["env"]["rewards"]["weightOri"]
+        self._weight_action_rate = self.cfg["env"]["rewards"][
+            "weightActionRate"
+        ]
+        self._weight_joint_vel = self.cfg["env"]["rewards"]["weightJointVel"]
 
         # Values to be filled in at runtime
         self.states = {}
@@ -680,6 +697,17 @@ class FrankaReach(VecTask):
             self.max_episode_length,
             self.states["eef_pos"],
             self.states["target_pos"],
+            self.states["eef_rot"],
+            self.states["target_rot"],
+            self.actions,
+            self.prev_actions,
+            self.states["dof_vel"],
+            self._std_dist,
+            self._weight_dist,
+            self._weight_dist_tanh,
+            self._weight_ori,
+            self._weight_action_rate,
+            self._weight_joint_vel,
         )
 
     def compute_observations(self):
@@ -697,6 +725,8 @@ class FrankaReach(VecTask):
         self.obs_buf[:, 1:8] = dof_pos_scaled[:, :7]
         self.obs_buf[:, 8:15] = dof_vel_scaled[:, :7]
         self.obs_buf[:, 15:18] = self.states["target_pos"]
+        self.obs_buf[:, 18:22] = self.states["target_rot"]
+        self.obs_buf[:, 22:29] = self.actions
 
         return self.obs_buf
 
@@ -792,6 +822,19 @@ class FrankaReach(VecTask):
             :, :3
         ]
 
+        sample_target_state = torch.zeros(num_resets, 13, device=self.device)
+        sample_target_state[:, 6] = 1.0
+        aa_rot = torch.zeros(num_resets, 3, device=self.device)
+        aa_rot[:, 2] = (
+            2.0
+            * self.start_rotation_noise
+            * (torch.rand(num_resets, device=self.device) - 0.5)
+        )
+        aa_rot[:, 0] = np.pi
+        self.root_rot[env_ids, self.handles["target"], :] = quat_mul(
+            axisangle2quat(aa_rot), sample_target_state[:, 3:7]
+        )
+
         # Update root state for cube and target
         multi_env_ids_int32 = self._global_indices[env_ids, -2:].flatten()
         self.gym.set_actor_root_state_tensor_indexed(
@@ -805,6 +848,7 @@ class FrankaReach(VecTask):
         self.reset_buf[env_ids] = 0
 
     def pre_physics_step(self, actions):
+        self.prev_actions = self.actions.clone()
         self.actions = actions.clone().to(self.device)
 
         # TODO: Implement gripper control from actions (currently not used)
@@ -889,14 +933,42 @@ def compute_franka_reward(
     max_episode_length: float,
     end_effector_pos: torch.Tensor,
     target_pos: torch.Tensor,
+    end_effector_ori: torch.Tensor,
+    target_ori: torch.Tensor,
+    actions: torch.Tensor,
+    prev_actions: torch.Tensor,
+    dof_vel: torch.Tensor,
+    std_dist: float,
+    weight_dist: float,
+    weight_dist_tanh: float,
+    weight_ori: float,
+    weight_action_rate: float,
+    weight_joint_vel: float,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    # Position reward
+    position_err = torch.norm(end_effector_pos - target_pos, dim=-1)
+    position_err_tanh = 1 - torch.tanh(position_err / std_dist)
+
+    # Orientataion reward
+    orientation_err = quat_diff_rad(end_effector_ori, target_ori)
+
+    # Action penalty
+    action_rate = torch.sum(torch.square(actions - prev_actions), dim=1)
+    joint_vel = torch.sum(torch.square(dof_vel), dim=1)
+
     # Compose rewards
-    l2_distance = torch.norm(end_effector_pos - target_pos, dim=-1)
-    rewards = -l2_distance
+    rewards = (
+        position_err * weight_dist
+        + position_err_tanh * weight_dist_tanh
+        + orientation_err * weight_ori
+        + action_rate * weight_action_rate
+        + joint_vel * weight_joint_vel
+    )
 
     # Compute resets
+    reach_goal = (position_err <= 0.02) & (orientation_err <= 0.1)
     reset_buf = torch.where(
-        l2_distance <= 0.01, torch.ones_like(reset_buf), reset_buf
+        reach_goal, torch.ones_like(reset_buf), reset_buf
     )
     reset_buf = torch.where(
         progress_buf >= max_episode_length - 1,
